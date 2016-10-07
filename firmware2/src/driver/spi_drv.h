@@ -24,13 +24,15 @@
 #define SPI_CLOCK_MASK 0x03  // SPR1 = bit 1, SPR0 = bit 0 on SPCR
 #define SPI_2XCLOCK_MASK 0x01  // SPI2X = bit 0 on SPSR
 
+#define API
+
 // spi驱动， 使用事件驱动
 /////////////////////////////////////////////////////////////////////////////////
 // public functions
 /////////////////////////////////////////////////////////////////////////////////
-uint8_t spi_init(uint8_t clock_div, uint8_t spi_mode, uint8_t bit_order);
-uint8_t spi_send(byte_t* buff, uint8_t len, callback_t callback, void* cb_param);
-uint8_t spi_recv(byte_t* buff, uint8_t len, callback_t callback, void* cb_param);
+API uint8_t spi_init(uint8_t clock_div, uint8_t spi_mode, uint8_t bit_order);
+API uint8_t spi_send(byte_t* buff, uint8_t len, callback_fn_t cb_fn, void* cb_param);
+API uint8_t spi_recv(byte_t* buff, uint8_t len, callback_fn_t cb_fn, void* cb_param);
 
 
 ////////////////////////////////////////////////////////////////////////////////

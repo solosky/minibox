@@ -17,6 +17,8 @@
 
 #define AM2320_DATA_PIN 7
 
+#define MAX_GSCLK_CYCLE 2
+
 #define BLANK_HIGH() bitSet(PORTE, 3)
 #define BLANK_LOW() bitClear(PORTE, 3)
 #define SET_CBIT0(v) bitWrite(PORTA, 0, (v))
@@ -56,24 +58,6 @@ void setup() {
   Serial.begin(115200);
   printf_begin();
 
-  //  pinMode(3, OUTPUT);
-  //  pinMode(2, OUTPUT);
-  // delay(2000);
-
-  //  // Timer2 GSCLK
-  TCCR2 = 1 << COM20 | 1 << CS20 | 1 << WGM21;
-  TCNT2 = 0;
-  OCR2 = 0;
-  // // TIMSK2 = 1 << OCIE2A;
-  //
-  //  // Timer1 BLANK
-  // TCCR3A = 1 << COM3A0;
-  TCCR3B = 1 << CS30 | 1 << WGM32;
-  TCCR3C = 0;
-  TCNT3 = 0;
-  OCR3A = 4096;
-  ETIMSK = 1 << OCIE3A;
-
   SPI.setClockDivider(SPI_CLOCK_DIV2);
   SPI.setDataMode(SPI_MODE3);
   SPI.setBitOrder(MSBFIRST);
@@ -87,17 +71,46 @@ void setup() {
   printf("init done~");
 }
 
+void set_gtimer(){
+   // Timer2 GSCLK
+  TCCR2 = 1 << COM20 | 1 << CS20 | 1 << WGM21;
+  TCNT2 = 0;
+  OCR2 = 0;
+  // // TIMSK2 = 1 << OCIE2A;
+  //
+  //  // Timer1 BLANK
+   //TCCR3A = 1 << COM3A0;
+  TCCR3A = 0;
+  TCCR3B = 1 << CS30 | 1 << WGM32;
+  TCCR3C = 0;
+  TCNT3 = 0;
+  OCR3A = 0x1000*2;
+
+  // OCR3BL = 0xFF;
+  // OCR3BH = 0xFF;
+  // OCR3CL = 0xFF;
+  // OCR3CH = 0xFF;
+
+  ETIMSK = 1 << OCIE3A;
+}
+
+uint8_t volatile gsclk_cnt = 0;
+
 ISR(TIMER3_COMPA_vect) {
+  gsclk_cnt++;
   bitClear(TCCR3B, CS30);
   bitClear(TCCR2, CS20);
   BLANK_HIGH();
   BLANK_LOW();
   TCNT2 = 0;
   TCNT3 = 0;
+  if(gsclk_cnt < MAX_GSCLK_CYCLE){
   bitSet(TCCR2, CS20);
   bitSet(TCCR3B, CS30);
+}
   // Serial.print("1");
 }
+
 ///////////////////////////////////////////////////////////////
 void init_wifi() {
   // 设置串口通讯的速率
@@ -223,9 +236,6 @@ void flush_dot_correction(uint8 row) {
 void frame_tick() {
   COE_HIGH();
   for (uint8 i = 0; i < 8; i++) {
-    BLANK_HIGH();
-    bitClear(TCCR3A, CS30);
-    bitClear(TCCR2, CS20);
 
     flush_frame_buffer(i);
     flush_dot_correction(i);
@@ -235,19 +245,24 @@ void frame_tick() {
     SET_CBIT1((i & 2) > 0);
     SET_CBIT2((i & 4) > 0);
 
-    // reset pmw counter
-    TCNT2 = 0;
-    TCNT3 = 0;
-
-    bitSet(TCCR2, CS20);
-    bitSet(TCCR3A, CS30);
-
     BLANK_LOW();
+
+    gsclk_cnt = 0;
+    set_gtimer();
+
+    while(gsclk_cnt < MAX_GSCLK_CYCLE){
+      ;
+    }
+
+    BLANK_HIGH();
 
     // delay for display
     // delay(1000);
     // delayMicroseconds(800);
-    vTaskDelay(1);
+    // while(gsclk_cnt < 2){
+    //     asm volatile ("nop");
+    // }
+    //gsclk_cnt = 0;
   }
   COE_LOW();
 }
@@ -556,9 +571,14 @@ void invalidate_clock() {
   r = min(160, r);
   r = r - 20; //[0,140]
 
-  uint8_t a = (uint8_t)((63 / 140.0) * (r));
-  uint32_t mask = ((uint32_t)(a)) << 24;
-  color = mask | 0x00FF00;
+  randomSeed(millis());
+  //color = random(0x100000, 0xFFFFFF);
+  //Serial.println(color, HEX);
+  color = 0x0F003F0F;
+
+  // uint8_t a = (uint8_t)((63 / 140.0) * (r));
+  // uint32_t mask = ((uint32_t)(a)) << 24;
+  // color = mask | color;
 
   clear_display();
 

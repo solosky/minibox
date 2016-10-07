@@ -1,0 +1,220 @@
+#include "fb.h"
+#include "spi_drv.h"
+
+#define COE 41
+#define CBIT0 44
+#define CBIT1 43
+#define CBIT2 42
+#define BLANK 3
+#define GSLCK 15
+#define MODE 13
+#define XLAT 12
+#define DHT11 7
+
+#define MAX_GSCLK_CYCLE 1
+
+#define _fb_set_blank() bitSet(PORTE, 3)
+#define _fb_clear_blank() bitClear(PORTE, 3)
+#define SET_CBIT0(v) bitWrite(PORTA, 0, (v))
+#define SET_CBIT1(v) bitWrite(PORTA, 1, (v))
+#define SET_CBIT2(v) bitWrite(PORTA, 2, (v))
+#define COE_HIGH() bitSet(PORTA, 3)
+#define COE_LOW() bitClear(PORTA, 3)
+#define MODE_HIGH() bitSet(PORTB, 5)
+#define MODE_LOW() bitClear(PORTB, 5)
+#define XLAT_HIGH() bitSet(PORTB, 4)
+#define XLAT_LOW() bitClear(PORTB, 4)
+
+fb_t _fb;
+byte_t _fb_tx_buff[24]= {0};
+
+fb_t* fb_default(){
+        return &_fb;
+}
+
+void fb_init(fb_t* fb){
+        fb->h = 8;
+        fb->w = 64;
+        fb->br = 10;
+        fb->bucket = 0;
+        fb->row = 0;
+        buffer_init(&(fb->tx_buff), _fb_tx_buff, sizeof(_fb_tx_buff));
+        sm_init(&fb->sm, _fb_event_cb, _fb_transition_cb, FB_STOP);
+
+        //memset(_fb_tx_buff, 0x18, 24);
+
+        pinMode(COE, OUTPUT);
+        pinMode(CBIT0, OUTPUT);
+        pinMode(CBIT1, OUTPUT);
+        pinMode(CBIT2, OUTPUT);
+        pinMode(MODE, OUTPUT);
+        pinMode(XLAT, OUTPUT);
+        pinMode(BLANK, OUTPUT);
+        pinMode(GSLCK, OUTPUT);
+
+        MODE_LOW();
+        COE_HIGH();
+}
+
+void fb_display(fb_t* fb){
+        spi_init(SPI_CLOCK_DIV128, SPI_MODE0, MSBFIRST);
+        sm_transition(&fb->sm, FB_GWR);
+}
+
+void _fb_spi_send_cb(void* param){
+        fb_t* fb = (fb_t*) param;
+  // if(fb->sm.state == FB_GWR) {
+  //         sm_transition(&(fb->sm), FB_GWT);
+  // }else{
+  //         sm_transition(&(fb->sm), FB_DWT);
+  // }
+  //
+        sm_publish(&(fb->sm), FB_SPI, param);
+}
+
+void _fb_event_cb(sm_t* sm, uint8_t event, void* param){
+    fb_t* fb = (fb_t*) param;
+    switch(event){
+      case FB_SPI:{
+        if(fb->sm.state == FB_GWR) {
+                sm_transition(&(fb->sm), FB_GWT);
+        }else{
+                sm_transition(&(fb->sm), FB_DWT);
+        }
+      }; break;
+      case FB_GTIMER:{
+           sm_transition(&(_fb.sm), FB_FIN);
+      }; break;
+    }
+}
+
+
+void _fb_transition_cb(sm_t* sm, uint8_t from_state, uint8_t to_state){
+        fb_t* fb = (fb_t*) sm;
+        switch(to_state) {
+        case FB_GWR: {
+                //build gray data
+                _fb_fill_gray(&(fb->tx_buff), fb->row, fb->bucket);
+                spi_send(fb->tx_buff.buff, fb->tx_buff.pos, _fb_spi_send_cb, fb);
+                //spi_send...
+        };
+                break;
+        case FB_GWT: {
+                // latch data pluse
+                XLAT_HIGH();
+                XLAT_LOW();
+
+                fb->bucket++;
+                if(fb->bucket < 6) {
+                        sm_transition(sm, FB_GWR);
+                }else {
+                        fb->bucket = 0;
+                         if((fb->fcnt & 0x0F) == 0) { // todo .. just for example
+                                 MODE_HIGH();
+                                 sm_transition(sm, FB_DWR);
+                         }else{
+                                MODE_LOW();
+                                sm_transition(sm, FB_SHOW);
+                        }
+                }
+        };
+                break;
+
+        case FB_DWR: {
+                _fb_fill_gray(&(fb->tx_buff), fb->row, fb->bucket);
+                spi_send(fb->tx_buff.buff, fb->tx_buff.pos, _fb_spi_send_cb, fb);
+        };
+                break;
+        case FB_DWT: {
+                XLAT_HIGH();
+                XLAT_LOW();
+                fb->bucket++;
+                if(fb->bucket < 6) {
+                        sm_transition(sm, FB_DWR);
+                }else{
+                      fb->bucket = 0;
+                        sm_transition(sm, FB_SHOW);
+                }
+        };
+                break;
+        case FB_SHOW: {
+
+                SET_CBIT0((fb->row & 1) > 0);
+                SET_CBIT1((fb->row & 2) > 0);
+                SET_CBIT2((fb->row & 4) > 0);
+                //printf("SHOW:r=%d,b=%d\n", fb->row, fb->bucket);
+
+
+                // _fb_clear_blank();
+                // asm volatile ("nop");
+                // _fb_set_blank();
+                // asm volatile ("nop");
+                // _fb_clear_blank();
+                // asm volatile ("nop");
+                 //_fb_set_blank();
+
+                //start gsclk timer
+                _fb_set_gtimer(fb);
+                //printf("set\n");
+        };
+                break;
+        case FB_FIN: {
+                if(fb->row == 7) {
+                        fb->row = 0;
+                        fb->fcnt++;
+                        COE_LOW();
+                        COE_HIGH();
+                }else{
+                        fb->row++;
+                }
+                //printf("FIN:r=%d,b=%d\n", fb->row, fb->bucket);
+                sm_transition(sm, FB_GWR);
+        };
+                break;
+        default:;
+
+        }
+}
+
+
+void _fb_set_gtimer(fb_t* fb){
+        TCCR2 = 1 << COM20 | 1 << CS20 | 1 << WGM21;
+        TCNT2 = 0;
+        OCR2 = 0;
+
+        //TCCR3A = 1 << COM3A0;
+        TCCR3A = 0;
+        OCR3A = 0x1000 * 2;
+        TCCR3C = 0;
+        TCNT3 = 0;
+        ETIMSK = 1 << OCIE3A;
+        TCCR3B = 1 << CS30 | 1 << WGM32;
+
+        _fb_clear_blank();
+}
+
+void _fb_fill_gray(io_buffer_t* buff, uint8_t row, uint8_t bucket){
+        //TODO ..
+        memset(buff->buff, 0x18, 24);
+        buff->pos = 24;
+}
+void _fb_fill_dot(io_buffer_t* buff, uint8_t row, uint8_t bucket){
+        //TODO ..
+        memset(buff->buff, 0xFF, 12);
+        buff->pos = 12;
+}
+
+
+ISR(TIMER3_COMPA_vect) {
+         _fb_set_blank();
+        //_fb_clear_blank();
+        //printf("I\n");
+        bitClear(TCCR3A, CS30);
+        bitClear(TCCR2, CS20);
+        //printf("D\n");
+        // only one gsclk
+        //bitSet(ETIFR, OCF3A);
+       sm_transition(&(_fb.sm), FB_FIN);
+       //printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n");
+       //sm_publish(&(_fb.sm), FB_GTIMER, &_fb);
+}

@@ -1,0 +1,61 @@
+#ifndef FRAMEBUFFER_H
+#define FRAMEBUFFER_H
+#include "io_base.h"
+#include "../util/sm.h"
+
+//frame buffer defines
+typedef struct __fb__{
+    sm_t sm;  //using state machine, event driving..
+    uint8_t* mem; // display memory mapping
+    uint8_t w;  // width pixels
+    uint8_t h; // height pixels
+    uint8_t br; // bright level
+
+    uint8_t volatile row;  //curent display row
+    uint8_t volatile bucket; // current write bucket, one bucket is 24bytes (as one TLC5941 gray data)
+
+    uint8_t fcnt; // total frame count, simply used for flush dot crrection data
+    io_buffer_t tx_buff;  //send buffer
+} fb_t;
+
+
+//fb state defines
+enum fb_state {
+  FB_STOP,
+  FB_GWR,
+  FB_GWT,
+  FB_DWR,
+  FB_DWT,
+  FB_SHOW,
+  FB_FIN
+};
+
+enum fb_event{
+  FB_SPI = 5,
+  FB_GTIMER
+};
+
+//extern fb_t _fb;
+
+
+///////////////////////////////////////////////////////////////////////////
+/// public functions
+///////////////////////////////////////////////////////////////////////////
+void fb_init(fb_t* fb);
+void fb_display(fb_t* fb);
+fb_t* fb_default();
+
+
+///////////////////////////////////////////////////////////////////////////
+/// private functions
+///////////////////////////////////////////////////////////////////////////
+void _fb_transition_cb(sm_t* sm, uint8_t from_state, uint8_t to_state);
+void _fb_event_cb(sm_t* sm, uint8_t event, void* param);
+void _fb_set_gtimer(fb_t* fb);
+void _fb_fill_gray(io_buffer_t* buff, uint8_t row, uint8_t bucket);
+void _fb_fill_dot(io_buffer_t* buff, uint8_t row, uint8_t bucket);
+void _fb_spi_send_cb(void* param);
+
+
+
+#endif

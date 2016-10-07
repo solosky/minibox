@@ -1,0 +1,177 @@
+#include "driver/spi_drv.h"
+#include <arduino.h>
+#include <HardwareSerial.h>
+
+
+#define COE 41
+#define CBIT0 44
+#define CBIT1 43
+#define CBIT2 42
+#define BLANK 3
+#define GSLCK 15
+#define MODE 13
+#define XLAT 12
+#define DHT11 7
+
+#define MAX_GSCLK_CYCLE 1
+
+#define BLANK_HIGH() bitSet(PORTE, 3)
+#define BLANK_LOW() bitClear(PORTE, 3)
+#define SET_CBIT0(v) bitWrite(PORTA, 0, (v))
+#define SET_CBIT1(v) bitWrite(PORTA, 1, (v))
+#define SET_CBIT2(v) bitWrite(PORTA, 2, (v))
+#define COE_HIGH() bitSet(PORTA, 3)
+#define COE_LOW() bitClear(PORTA, 3)
+#define MODE_HIGH() bitSet(PORTB, 5)
+#define MODE_LOW() bitClear(PORTB, 5)
+#define XLAT_HIGH() bitSet(PORTB, 4)
+#define XLAT_LOW() bitClear(PORTB, 4)
+
+
+void start_timer(){
+        TCCR2 = 1 << COM20 | 1 << CS20 | 1 << WGM21;
+        TCNT2 = 0;
+        OCR2 = 0;
+
+        //TCCR3A = 1 << COM3A0;
+        TCCR3A = 0;
+        OCR3A = 0x1000 * 2;
+        TCCR3C = 0;
+        TCNT3 = 0;
+        ETIMSK = 1 << OCIE3A;
+        TCCR3B = 1 << CS30 | 1 << WGM32;
+        BLANK_LOW();
+}
+
+void stop_timer(){
+     bitClear(TCCR3A, CS30);
+     bitClear(TCCR2, CS20);
+
+}
+
+uint16_t volatile gsclk_cnt = 0;
+
+
+//  ISR(TIMER3_COMPA_vect) {
+//   gsclk_cnt ++;
+//        BLANK_HIGH();
+//        if(gsclk_cnt < MAX_GSCLK_CYCLE){
+//          BLANK_LOW();
+//        }else{
+//          stop_timer();
+//        }
+// }
+
+
+void tx_complate(void *param) {
+    uint8_t* p = (uint8_t*) param;
+    *p = 1;
+}
+void spi_transfer(uint8_t* buff, uint8_t size){
+        uint8_t volatile tx_done = 0;
+        spi_send(buff, size, tx_complate, (void*) &tx_done);
+        while(!tx_done) {
+                //asm volatile ("nop");
+        }
+}
+
+void flush_frame_buffer(uint8_t row) {
+        XLAT_LOW();
+        MODE_LOW();
+
+        uint8_t buff[24];
+        memset(buff, 0x18, 24);
+        // Serial.println("=============================");
+        for (uint8_t a = 0; a < 6; a++) {
+                spi_transfer(buff, sizeof(buff));
+                // Serial.println("----------------------");
+                XLAT_HIGH();
+                XLAT_LOW();
+        }
+}
+
+void flush_dot_correction(uint8_t row) {
+        XLAT_LOW();
+        MODE_HIGH();
+        uint8_t dot[12];
+        memset(dot, 0xFF, 12);
+        for (char a = 0; a < 6; a++) {
+                spi_transfer(dot, sizeof(dot));
+                XLAT_HIGH();
+                XLAT_LOW();
+        }
+}
+
+void frame_tick() {
+        //COE_HIGH();
+        for (uint8_t i = 0; i < 8; i++) {
+                //BLANK_HIGH();
+                //gsclk_cnt = 0;
+
+
+                flush_frame_buffer(i);
+                //flush_dot_correction(i);
+
+                // select line
+                SET_CBIT0((i & 1) > 0);
+                SET_CBIT1((i & 2) > 0);
+                SET_CBIT2((i & 4) > 0);
+
+                // reset pmw counter
+                //TCNT2 = 0;
+                //TCNT3 = 0;
+
+                //bitSet(TCCR2, CS20);
+              //  bitSet(TCCR3A, CS30);
+
+
+                // delay for display
+                // delay(1000);
+//                delayMicroseconds(800);
+//                delay(1000);
+                gsclk_cnt = 0;
+                start_timer();
+                while(gsclk_cnt < MAX_GSCLK_CYCLE){
+                    //Serial.println(gsclk_cnt);
+                    asm volatile ("nop");
+                }
+                //stop_timer();
+                //Serial.println(gsclk_cnt);
+                // uint8_t t = 0;
+                // while(t < 0xFF){
+                //   t++;
+                //   asm volatile("nop");
+                // }
+              //  bitClear(TCCR3A, CS30);
+              //  bitClear(TCCR2, CS20);
+                // Serial1.println('A');
+                 //Serial.println(gsclk_cnt);
+        }
+      //  COE_LOW();
+}
+
+
+
+void setup() {
+        pinMode(COE, OUTPUT);
+        pinMode(CBIT0, OUTPUT);
+        pinMode(CBIT1, OUTPUT);
+        pinMode(CBIT2, OUTPUT);
+        pinMode(MODE, OUTPUT);
+        pinMode(XLAT, OUTPUT);
+        pinMode(BLANK, OUTPUT);
+        pinMode(GSLCK, OUTPUT);
+
+        //init_timer();
+        spi_init(SPI_CLOCK_DIV128, SPI_MODE0, MSBFIRST);
+
+        Serial.begin(115200);
+
+        COE_HIGH();
+
+        flush_dot_correction(0);
+}
+
+void loop() {
+        frame_tick();
+}
