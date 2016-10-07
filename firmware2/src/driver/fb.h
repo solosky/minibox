@@ -4,12 +4,13 @@
 
 //frame buffer defines
 typedef struct __fb__{
-    uint8_t* mem; // display memory mapping
     uint8_t w;  // width pixels
     uint8_t h; // height pixels
-    uint8_t br; // bright level
     uint8_t volatile gcnt; // gray sclk count..
     uint8_t fcnt; // frame count..
+
+    uint32_t mem[8][32]; //frame mem buffer, in argb format
+    uint8_t  spec[6][2][2]; //driver specs, meta info for rgb display
 } fb_t;
 
 
@@ -28,8 +29,9 @@ fb_t* fb_default();
 void _fb_set_gtimer(fb_t* fb);
 void _fb_flush_gray(fb_t* fb, uint8_t row);
 void _fb_flush_dot(fb_t* fb, uint8_t row);
-void _fb_fill_gray(fb_t* fb, byte_t * buff, uint8_t row, uint8_t bucket);
-void _fb_fill_dot(fb_t* fb, byte_t* buff, uint8_t row, uint8_t bucket);
+
+void _fb_fill_192bit_color(fb_t* fb, uint8_t row, uint8_t offset, uint8_t clr, uint8_t buff[]);
+void _fb_fill_96bit_dot(fb_t* fb, uint8_t row, uint8_t offset, uint8_t buff[]);
 
 
 
