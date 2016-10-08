@@ -159,8 +159,7 @@ uint32 frame_buffer[8][32];
 uint32 driver_spec[6][2][2] = {
     {{0, 1} /*DR*/, {0, 0} /*DG*/},   {{8, 0} /*DB*/, {0, 2} /*CR*/},
     {{8, 2} /*CG*/, {8, 1} /*CB*/},   {{16, 1} /*BR*/, {16, 0} /*BG*/},
-    {{24, 0} /*BB*/, {16, 2} /*AR*/}, {{24, 2} /*AG*/, {24, 1} /*AB*/}
-  };
+    {{24, 0} /*BB*/, {16, 2} /*AR*/}, {{24, 2} /*AG*/, {24, 1} /*AB*/}};
 
 void fill_192bit_color(uint8 row, uint8 offset, uint8 clr, uint8 buff[]) {
   char s[40];

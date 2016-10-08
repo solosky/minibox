@@ -2,6 +2,8 @@
 #define FRAMEBUFFER_H
 #include "io_base.h"
 
+#define uint32 unsigned long
+
 //frame buffer defines
 typedef struct __fb__{
     uint8_t w;  // width pixels
@@ -27,6 +29,7 @@ fb_t* fb_default();
 /// private functions
 ///////////////////////////////////////////////////////////////////////////
 void _fb_set_gtimer(fb_t* fb);
+void _fb_wait_gtimer(fb_t* fb);
 void _fb_flush_gray(fb_t* fb, uint8_t row);
 void _fb_flush_dot(fb_t* fb, uint8_t row);
 

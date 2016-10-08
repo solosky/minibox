@@ -39,22 +39,6 @@ fb_t _fb = {
 }   // row, offset, color RA,GA,BA, RB, GB, BB, RC,GC,BC, RD,GD,BD
 };
 
-void print_buffer(uint8_t *buff, uint8_t len) {
-  uint8_t *p = buff;
-  uint8_t c = 0;
-  char s[6] = {0};
-  while (p < buff + len) {
-    sprintf(s, "%.2X ", (*p));
-    Serial.print(s);
-    // Serial.print(*p, HEX);
-    // Serial.print(" ");
-    if (((++c) % 8) == 0) {
-      Serial.println();
-    }
-    p++;
-  }
-  Serial.println();
-}
 
 fb_t* fb_default(){
         return &_fb;
@@ -72,7 +56,7 @@ void fb_init(fb_t* fb){
         pinMode(GSLCK, OUTPUT);
 
         SPI.setClockDivider(SPI_CLOCK_DIV2);
-        SPI.setDataMode(SPI_MODE0);
+        SPI.setDataMode(SPI_MODE3);
         SPI.setBitOrder(MSBFIRST);
 
         SPI.begin();
@@ -82,7 +66,7 @@ void fb_init(fb_t* fb){
 
         for(uint8_t i=0; i<8; i++){
           for(uint8_t j=0; j<32; j++){
-            fb->mem[i][j] = 0x01FFFFFF;
+            fb->mem[i][j] = 0xFF00FF00;
           }
         }
 }
@@ -106,7 +90,6 @@ void fb_tick(fb_t* fb){
                 _fb_pin_cbit2_write((i & 4) > 0);
 
                 // set timer
-                fb->gcnt = 0;
                 _fb_set_gtimer(fb);
 
                 //watting done
@@ -126,10 +109,6 @@ void _fb_flush_gray(fb_t* fb, uint8_t row) {
                 _fb_fill_192bit_color(fb, row, fb->spec[a][1][0], fb->spec[a][1][1], buff + 12);
 
                 SPI.transfer(buff, sizeof(buff));
-
-                printf("row=%d, a=%d\r\n", row, a);
-                print_buffer(buff, 24);
-                printf("---------------------\r\n");
 
                 _fb_pin_xlat_set();
                 _fb_pin_xlat_clear();
@@ -153,6 +132,9 @@ void _fb_flush_dot(fb_t* fb, uint8_t row) {
 
 
 void _fb_set_gtimer(fb_t* fb){
+
+        fb->gcnt = 0;
+
         TCCR2 = 1 << COM20 | 1 << CS20 | 1 << WGM21;
         TCNT2 = 0;
         OCR2 = 0;
@@ -172,8 +154,8 @@ void _fb_set_gtimer(fb_t* fb){
 void _fb_fill_192bit_color(fb_t* fb, uint8_t row, uint8_t offset, uint8_t clr, uint8_t buff[]){
   uint32_t *p = fb->mem[row] + offset + 7;
   for (uint8_t i = 0; i < 12; i += 3) {
-    uint16_t b1 = (((*(p)) >> (16 - clr * 8)) & 0xFF) ;//* 16;
-    uint16_t b2 = (((*(p - 1)) >> (16 - clr * 8)) & 0xFF);// * 16;
+    uint16_t b1 = (((*(p)) >> (16 - clr * 8)) & 0xFF) * 16;
+    uint16_t b2 = (((*(p - 1)) >> (16 - clr * 8)) & 0xFF) * 16;
     buff[i + 0] = b1 >> 4;
     buff[i + 1] = (0xF & b1) << 4 | b2 >> 8;
     buff[i + 2] = 0xFF & b2;
